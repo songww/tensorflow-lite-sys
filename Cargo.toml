@@ -1,0 +1,17 @@
+[package]
+name = "tensorflow-lite-sys"
+version = "0.1.0"
+authors = ["Wonway Song <sww718168@163.com>"]
+edition = "2018"
+documentation = "https://docs.rs/tensorflow-lite-sys"
+repository = "https://github.com/songww/tensorflow-lite-sys"
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.56"
+
+[features]
+default = [ "v2.4" ]
+"v2.4" = []
