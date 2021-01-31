@@ -15,6 +15,7 @@ fn main() {
         .whitelist_type("TfLite.*")
         .whitelist_function("TfLite.*")
         .blacklist_type("std.*")
+        .bitfield_enum("TfLiteDelegateFlags")
         .enable_cxx_namespaces()
         .enable_function_attribute_detection()
         .clang_arg("-xc++")
