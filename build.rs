@@ -5,22 +5,39 @@ use bindgen;
 
 fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let bindings = bindgen::builder()
-        .header("v2.4/tensorflow/lite/c/c_api_experimental.h")
-        .header("v2.4/tensorflow/lite/c/common.h")
-        .header("v2.4/tensorflow/lite/c/c_api.h")
+    let tfversion = if cfg!(feature = "v2.4") {
+        "v2.4"
+    } else {
+        panic!("Unsupported tensorflow version.");
+    };
+    let mut builder = bindgen::builder()
+        .header(format!(
+            "{}/tensorflow/lite/c/c_api_experimental.h",
+            tfversion
+        ))
+        .header(format!("{}/tensorflow/lite/c/common.h", tfversion))
+        .header(format!("{}/tensorflow/lite/c/c_api.h", tfversion));
+
+    if cfg!(feature = "xnnpack") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/delegates/xnnpack/xnnpack_delegate.h",
+            tfversion
+        ));
+    }
+
+    let bindings = builder
         .size_t_is_usize(true)
         .rustfmt_bindings(true)
+        .bitfield_enum("TfLiteDelegateFlags")
         .whitelist_var("TfLite.*")
         .whitelist_type("TfLite.*")
         .whitelist_function("TfLite.*")
         .blacklist_type("std.*")
-        .bitfield_enum("TfLiteDelegateFlags")
         .enable_cxx_namespaces()
         .enable_function_attribute_detection()
         .clang_arg("-xc++")
         .clang_arg("-std=c++14")
-        .clang_arg("-Iv2.4")
+        .clang_arg(format!("-I{}", tfversion))
         .generate()
         .unwrap();
 
