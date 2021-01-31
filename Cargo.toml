@@ -16,3 +16,4 @@ bindgen = "0.56"
 default = [ "v2.4", "xnnpack" ]
 "v2.4" = []
 xnnpack = []
+experimental = []

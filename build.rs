@@ -11,16 +11,19 @@ fn main() {
         panic!("Unsupported tensorflow version.");
     };
     let mut builder = bindgen::builder()
-        .header(format!(
-            "{}/tensorflow/lite/c/c_api_experimental.h",
-            tfversion
-        ))
         .header(format!("{}/tensorflow/lite/c/common.h", tfversion))
         .header(format!("{}/tensorflow/lite/c/c_api.h", tfversion));
 
     if cfg!(feature = "xnnpack") {
         builder = builder.header(format!(
             "{}/tensorflow/lite/delegates/xnnpack/xnnpack_delegate.h",
+            tfversion
+        ));
+    }
+
+    if cfg!(feature = "experimental") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/c/c_api_experimental.h",
             tfversion
         ));
     }
