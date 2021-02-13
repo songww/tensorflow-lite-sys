@@ -1,3 +1,6 @@
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
 /*
 mod c_api_types {
     include!(concat!(env!("OUT_DIR"), "/c_api_types.rs"));
@@ -29,8 +32,4 @@ pub use self::core::*;
 pub use self::ctypes::*;
 */
 
-mod _internal {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
-
-pub use _internal::root::*;
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

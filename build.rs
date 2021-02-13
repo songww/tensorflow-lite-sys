@@ -36,7 +36,6 @@ fn main() {
         .whitelist_type("TfLite.*")
         .whitelist_function("TfLite.*")
         .blacklist_type("std.*")
-        .enable_cxx_namespaces()
         .enable_function_attribute_detection()
         .clang_arg("-xc++")
         .clang_arg("-std=c++14")
