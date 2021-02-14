@@ -15,5 +15,8 @@ bindgen = "0.56"
 [features]
 default = [ "v2.4", "xnnpack" ]
 "v2.4" = []
+gpu = []
+metal = []
+coreml = []
 xnnpack = []
 experimental = []

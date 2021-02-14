@@ -28,6 +28,27 @@ fn main() {
         ));
     }
 
+    if cfg!(feature = "gpu") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/delegates/gpu/delegate.h",
+            tfversion
+        ));
+    }
+
+    if cfg!(feature = "metal") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/delegates/gpu/metal_delegate.h",
+            tfversion
+        ));
+    }
+
+    if cfg!(feature = "coreml") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/delegates/coreml/coreml_delegate.h",
+            tfversion
+        ));
+    }
+
     let bindings = builder
         .size_t_is_usize(true)
         .rustfmt_bindings(true)
@@ -35,7 +56,9 @@ fn main() {
         .whitelist_var("TfLite.*")
         .whitelist_type("TfLite.*")
         .whitelist_function("TfLite.*")
-        .blacklist_type("std.*")
+        .whitelist_var("TFLGpu.*")
+        .whitelist_type("TFLGpu.*")
+        .whitelist_function("TFLGpu.*")
         .enable_function_attribute_detection()
         .clang_arg("-xc++")
         .clang_arg("-std=c++14")

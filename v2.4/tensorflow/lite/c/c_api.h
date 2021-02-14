@@ -36,7 +36,7 @@ limitations under the License.
 /// * int is used as an index into arrays.
 ///
 /// Usage:
-/// <pre><code>
+/// ```
 /// // Create the model and interpreter options.
 /// TfLiteModel* model = TfLiteModelCreateFromFile("/path/to/model.tflite");
 /// TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
@@ -65,6 +65,7 @@ limitations under the License.
 /// TfLiteInterpreterDelete(interpreter);
 /// TfLiteInterpreterOptionsDelete(options);
 /// TfLiteModelDelete(model);
+/// ```
 
 #ifdef __cplusplus
 extern "C" {
