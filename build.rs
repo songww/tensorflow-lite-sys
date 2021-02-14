@@ -142,28 +142,61 @@ fn ios_framework_to_staticlib(
     metal_required: bool,
     output: &Path,
 ) {
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     let c = frameworks
         .join("TensorFlowLiteC.framework")
         .join("TensorFlowLiteC");
-    let mut objects = vec![c.as_os_str()];
+    let mut objects = match lipo_info(&c) {
+        MachOType::Fat(archs) => {
+            assert!(archs.contains(&target_arch));
+            let thin_object = out_path.join("tensorflow-lite-c.o");
+            lipo_thin_arch(&c, &target_arch, &thin_object);
+            vec![thin_object]
+        }
+        MachOType::NonFat(arch) => {
+            assert_eq!(arch, target_arch);
+            vec![c]
+        }
+    };
     let coreml = frameworks
         .join("TensorFlowLiteCCoreML.framework")
         .join("TensorFlowLiteCCoreML");
     if coreml_required {
-        if coreml.exists() {
-            objects.push(coreml.as_os_str());
-        } else {
+        if !coreml.exists() {
             panic!("TensorFlowLiteCCoreML.framework dose not exists.");
+        }
+        match lipo_info(&coreml) {
+            MachOType::Fat(archs) => {
+                assert!(archs.contains(&target_arch));
+                let thin_object = out_path.join("tensorflow-lite-coreml.o");
+                lipo_thin_arch(&coreml, &target_arch, &thin_object);
+                objects.push(thin_object);
+            }
+            MachOType::NonFat(arch) => {
+                assert_eq!(arch, target_arch);
+                objects.push(coreml);
+            }
         }
     }
     let metal = frameworks
         .join("TensorFlowLiteCMetal.framework")
         .join("TensorFlowLiteCMetal");
     if metal_required {
-        if metal.exists() {
-            objects.push(metal.as_os_str());
-        } else {
+        if !metal.exists() {
             panic!("TensorFlowLiteCMetal.framework dose not exists.");
+        }
+        match lipo_info(&metal) {
+            MachOType::Fat(archs) => {
+                assert!(archs.contains(&target_arch));
+                let thin_object = out_path.join("tensorflow-lite-metal.o");
+                lipo_thin_arch(&metal, &target_arch, &thin_object);
+                objects.push(thin_object);
+            }
+            MachOType::NonFat(arch) => {
+                assert_eq!(arch, target_arch);
+                objects.push(metal);
+            }
         }
     }
     Command::new("libtool")
@@ -173,4 +206,49 @@ fn ios_framework_to_staticlib(
         .arg(output.as_os_str())
         .output()
         .expect("Failed to create libtensorflow-lite.a");
+}
+
+enum MachOType {
+    Fat(Vec<String>), // architectures contains.
+    NonFat(String),
+}
+
+fn lipo_info(binary: &Path) -> MachOType {
+    let out = Command::new("lipo")
+        .arg("-i")
+        .arg(binary.as_os_str())
+        .output()
+        .expect("Failed to get info of Mach-O binary.");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if stdout.trim().starts_with("Non-fat file:") {
+        let mut split = stdout.rsplitn(1, ": ");
+        let arch = split.next().expect("Invalid MachO binary architecture.");
+        MachOType::NonFat(arch.to_string())
+    } else if stdout.trim().starts_with("Architectures in the fat file:") {
+        let mut split = stdout.rsplitn(1, ": ");
+        let archs = split.next().expect("Invalid MachO binary architecture.");
+        MachOType::Fat(
+            archs
+                .split_ascii_whitespace()
+                .map(|arch| arch.to_string())
+                .collect(),
+        )
+    } else {
+        panic!("Invalid Mach-O binary.")
+    }
+}
+
+fn lipo_thin_arch(input: &Path, arch: &str, output: &Path) {
+    Command::new("lipo")
+        .arg("-thin")
+        .arg(&arch)
+        .arg("-output")
+        .arg(output.as_os_str())
+        .arg(input.as_os_str())
+        .status()
+        .expect(&format!(
+            "Failed to thin {} from Mach-O binary {}.",
+            &arch,
+            input.display()
+        ));
 }

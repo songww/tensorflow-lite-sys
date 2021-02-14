@@ -11,8 +11,9 @@ This crate provides bindings to the raw low-level C API.
 * static linked by default.
 * iOS dose not export experimental apis, enable it should with manual compilation framworks.
 * Set env `TFLITE_FRAMEWORK_PATH` for path that contains `TensorFlowLiteC.framework`, Likes:
-    >> ls Pods/TensorFlowLiteC/Frameworks/
+    >> ls Pods/TensorFlowLiteC/Frameworks
     TensorFlowLiteC.framework  TensorFlowLiteCCoreML.framework  TensorFlowLiteCMetal.framework.
 
 ## Android Notice
-* dynamic linked [build android](https://www.tensorflow.org/lite/guide/build_android).
+* dynamic linked, auto download aar from [jcenter](https://bintray.com/google/tensorflow/tensorflow-lite). This is
+  useful with [cargo-apk](https://github.com/rust-windowing/android-ndk-rs/tree/master/cargo-apk).
