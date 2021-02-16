@@ -54,6 +54,7 @@ fn main() {
         .size_t_is_usize(true)
         .rustfmt_bindings(true)
         .bitfield_enum("TfLiteDelegateFlags")
+        .bitfield_enum("TfLiteGpuExperimentalFlags")
         .whitelist_var("TfLite.*")
         .whitelist_type("TfLite.*")
         .whitelist_function("TfLite.*")
