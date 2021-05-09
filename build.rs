@@ -8,12 +8,27 @@ fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let tfversion = if cfg!(feature = "v2.4") {
         "v2.4"
+    } else if cfg!(feature = "v2.5") {
+        "v2.5"
     } else {
         panic!("Unsupported tensorflow version.");
     };
     let mut builder = bindgen::builder()
         .header(format!("{}/tensorflow/lite/c/common.h", tfversion))
         .header(format!("{}/tensorflow/lite/c/c_api.h", tfversion));
+
+    if cfg!(feature = "v2.5") {
+        builder = builder
+            .header(format!("{}/tensorflow/lite/c/builtin_op_data.h", tfversion))
+            .header(format!("{}/tensorflow/lite/c/c_api_types.h", tfversion))
+            .header(format!("{}/tensorflow/lite/c/builtin_ops.h", tfversion));
+    }
+    if cfg!(feature = "external") {
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/c/external/external_delegate.h",
+            tfversion
+        ));
+    }
 
     if cfg!(feature = "xnnpack") {
         builder = builder.header(format!(
@@ -50,17 +65,28 @@ fn main() {
         ));
     }
 
+    if cfg!(feature = "hexagon") {
+        if !cfg!(target_os = "android") {
+            panic!("'hexagon' delegate only works on 'android' platform!");
+        }
+        builder = builder.header(format!(
+            "{}/tensorflow/lite/delegates/hexagon/hexagon_delegate.h",
+            tfversion
+        ));
+        // TODO: add link of hexagon library.
+    }
+
     let bindings = builder
         .size_t_is_usize(true)
         .rustfmt_bindings(true)
         .bitfield_enum("TfLiteDelegateFlags")
         .bitfield_enum("TfLiteGpuExperimentalFlags")
-        .whitelist_var("TfLite.*")
-        .whitelist_type("TfLite.*")
-        .whitelist_function("TfLite.*")
-        .whitelist_var("TFLGpu.*")
-        .whitelist_type("TFLGpu.*")
-        .whitelist_function("TFLGpu.*")
+        .allowlist_var("TfLite.*")
+        .allowlist_type("TfLite.*")
+        .allowlist_function("TfLite.*")
+        .allowlist_var("TFLGpu.*")
+        .allowlist_type("TFLGpu.*")
+        .allowlist_function("TFLGpu.*")
         .enable_function_attribute_detection()
         .clang_arg("-xc++")
         .clang_arg("-std=c++14")
