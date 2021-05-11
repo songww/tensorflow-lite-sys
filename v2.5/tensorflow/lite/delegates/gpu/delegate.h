@@ -66,7 +66,7 @@ typedef struct {
   /// precision. Otherwise, the GPU may quantify tensors, downcast values,
   /// process in FP16 to increase performance. For most models precision loss is
   /// warranted.
-  /// [OBSOLETE]: to be removed
+  /// \[OBSOLETE]: to be removed
   int32_t is_precision_loss_allowed;
 
   /// Preference is defined in TfLiteGpuInferenceUsage.

@@ -21,7 +21,7 @@ fn main() {
         builder = builder
             .header(format!("{}/tensorflow/lite/c/builtin_op_data.h", tfversion))
             .header(format!("{}/tensorflow/lite/c/c_api_types.h", tfversion))
-            .header(format!("{}/tensorflow/lite/c/builtin_ops.h", tfversion));
+            .header(format!("{}/tensorflow/lite/builtin_ops.h", tfversion));
     }
     if cfg!(feature = "external") {
         builder = builder.header(format!(
@@ -77,20 +77,27 @@ fn main() {
     }
 
     let bindings = builder
-        .size_t_is_usize(true)
-        .rustfmt_bindings(true)
-        .bitfield_enum("TfLiteDelegateFlags")
-        .bitfield_enum("TfLiteGpuExperimentalFlags")
         .allowlist_var("TfLite.*")
         .allowlist_type("TfLite.*")
         .allowlist_function("TfLite.*")
         .allowlist_var("TFLGpu.*")
         .allowlist_type("TFLGpu.*")
         .allowlist_function("TFLGpu.*")
-        .enable_function_attribute_detection()
+        .array_pointers_in_arguments(true)
+        .bitfield_enum("TfLiteDelegateFlags")
+        .bitfield_enum("TfLiteGpuExperimentalFlags")
         .clang_arg("-xc++")
         .clang_arg("-std=c++14")
         .clang_arg(format!("-I{}", tfversion))
+        .disable_name_namespacing()
+        .enable_function_attribute_detection()
+        // .emit_builtins()
+        .opaque_type("TfLiteIntArray")
+        .opaque_type("TfLiteFloatArray")
+        // .prepend_enum_name(false)
+        .respect_cxx_access_specs(true)
+        .rustfmt_bindings(true)
+        .size_t_is_usize(true)
         .generate()
         .unwrap();
 
@@ -134,6 +141,19 @@ fn main() {
         }
         println!("cargo:rustc-link-lib=static=tensorflow-lite");
         println!("cargo:rustc-link-search=native={}", out_path.display());
+    } else if cfg!(target_os = "macos") {
+        let lib_search_parh = env::var("LIB_TENSORFLOW_LITE_C_PATH").expect("Please set env `LIB_TENSORFLOW_LITE_C_PATH` that contains `libtensorflowlite_c.dylib` for macOS.");
+        if !PathBuf::from(&lib_search_parh)
+            .join("libtensorflowlite_c.dylib")
+            .exists()
+        {
+            panic!(
+                "`libtensorflowlite_c.dylib` dose not found in `{0}`, of env `LIB_TENSORFLOW_LITE_C_PATH`.",
+                lib_search_parh
+            );
+        }
+        println!("cargo:rustc-link-lib=dylib=tensorflowlite_c");
+        println!("cargo:rustc-link-search={}", lib_search_parh);
     }
 }
 
