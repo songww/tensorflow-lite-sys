@@ -22,3 +22,6 @@ coreml = []
 hexagon = []
 xnnpack = []
 experimental = []
+
+[dev-dependencies]
+vsprintf = "2.0.0"

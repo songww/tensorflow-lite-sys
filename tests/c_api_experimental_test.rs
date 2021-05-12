@@ -16,7 +16,11 @@
 
 // using testing::HasSubstr;
 // using tflite::delegates::test_utils::TestDelegate;
-use std::ffi::CString;
+use std::ffi::{c_void, CStr, CString};
+use std::mem::size_of;
+use std::os::raw::c_char;
+
+use vsprintf::vsprintf;
 
 use tensorflow_lite_sys as ffi;
 
@@ -87,7 +91,7 @@ fn c_api_experimental_smoke_test() {
 // Test using TfLiteInterpreterCreateWithSelectedOps.
 // TEST(CApiExperimentalTest, SelectedBuiltins) {
 #[test]
-fn c_api_experimental_selected_builtins() {
+fn c_api_experimental_selected_builtins_test() {
     unsafe {
         let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
@@ -124,105 +128,187 @@ fn c_api_experimental_selected_builtins() {
     }
 }
 
-/*
 // Test that when using TfLiteInterpreterCreateWithSelectedOps,
 // we do NOT get the standard builtin operators by default.
-TEST(CApiExperimentalTest, MissingBuiltin) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
-  ASSERT_NE(model, nullptr);
+//TEST(CApiExperimentalTest, MissingBuiltin) {
+#[test]
+fn c_api_experimental_missing_builtin_test() {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
+        assert!(!model.is_null());
 
-  // Install a custom error reporter into the interpreter by way of options.
-  tflite::TestErrorReporter reporter;
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
-  TfLiteInterpreterOptionsSetErrorReporter(
-      options,
-      [](void* user_data, const char* format, va_list args) {
-        reinterpret_cast<tflite::TestErrorReporter*>(user_data)->Report(format,
-                                                                        args);
-      },
-      &reporter);
+        // Install a custom error reporter into the interpreter by way of options.
+        //tflite::TestErrorReporter reporter;
+        #[repr(C)]
+        struct TestErrorReporter {
+            error_messages: Vec<String>,
+        }
+        impl TestErrorReporter {
+            fn report(&mut self, message: String) {
+                self.error_messages.push(message);
+            }
+            fn num_calls(&self) -> usize {
+                self.error_messages.len()
+            }
+        }
+        extern "C" fn report(
+            user_data: *mut c_void,
+            format: *const c_char,
+            args: *mut ffi::va_list,
+        ) {
+            unsafe { (user_data as *mut TestErrorReporter).as_mut() }
+                .unwrap()
+                .report(unsafe { vsprintf(format, args).unwrap() });
+        }
+        let mut reporter = TestErrorReporter {
+            error_messages: Vec::new(),
+        };
+        let options: *mut ffi::TfLiteInterpreterOptions = ffi::TfLiteInterpreterOptionsCreate();
+        ffi::TfLiteInterpreterOptionsSetErrorReporter(
+            options,
+            Some(report),
+            &mut reporter as *mut _ as *mut c_void,
+        );
 
-  // Create an interpreter with no builtins at all.
-  TfLiteInterpreter* interpreter =
-      TfLiteInterpreterCreateWithSelectedOps(model, options);
+        // Create an interpreter with no builtins at all.
+        let interpreter: *mut ffi::TfLiteInterpreter =
+            ffi::TfLiteInterpreterCreateWithSelectedOps(model, options);
 
-  // Check that interpreter creation failed, because the model contain a buitin
-  // op that wasn't supported, and that we got the expected error messages.
-  ASSERT_EQ(interpreter, nullptr);
-  EXPECT_THAT(
-      reporter.error_messages(),
-      HasSubstr("Didn't find op for builtin opcode 'ADD' version '1'."));
-  EXPECT_EQ(reporter.num_calls(), 2);
+        // Check that interpreter creation failed, because the model contain a buitin
+        // op that wasn't supported, and that we got the expected error messages.
+        assert!(interpreter.is_null());
+        println!("{:?}", &reporter.error_messages);
+        assert!(reporter.error_messages[0]
+            .starts_with("Didn't find op for builtin opcode 'ADD' version '1'."));
+        assert_eq!(reporter.num_calls(), 2);
 
-  TfLiteInterpreterDelete(interpreter);
-  TfLiteInterpreterOptionsDelete(options);
-  TfLiteModelDelete(model);
+        ffi::TfLiteInterpreterDelete(interpreter);
+        ffi::TfLiteInterpreterOptionsDelete(options);
+        ffi::TfLiteModelDelete(model);
+    }
 }
 
 struct OpResolverData {
-  bool called_for_add = false;
-};
-
-const TfLiteRegistration* MyFindBuiltinOp(void* user_data,
-                                          TfLiteBuiltinOperator op,
-                                          int version) {
-  OpResolverData* my_data = static_cast<OpResolverData*>(user_data);
-  if (op == ffi::TfLiteBuiltinOperator_kTfLiteBuiltinAdd && version == 1) {
-    my_data->called_for_add = true;
-    return GetDummyRegistration();
-  }
-  return nullptr;
+    called_for_add: bool, //  = false;
 }
 
-const TfLiteRegistration* MyFindCustomOp(void*, const char* custom_op,
-                                         int version) {
-  if (absl::string_view(custom_op) == "foo" && version == 1) {
-    return GetDummyRegistration();
-  }
-  return nullptr;
+impl Default for OpResolverData {
+    fn default() -> OpResolverData {
+        OpResolverData {
+            called_for_add: false,
+        }
+    }
+}
+
+// const TfLiteRegistration* MyFindBuiltinOp(void* user_data,
+//                                           TfLiteBuiltinOperator op,
+//                                           int version) {
+unsafe extern "C" fn my_find_builtin_op(
+    user_data: *mut c_void,
+    op: ffi::TfLiteBuiltinOperator,
+    version: i32,
+) -> *const ffi::TfLiteRegistration {
+    let my_data = unsafe { (user_data as *mut OpResolverData).as_mut().unwrap() };
+    if op == ffi::TfLiteBuiltinOperator_kTfLiteBuiltinAdd && version == 1 {
+        my_data.called_for_add = true;
+        Box::leak(Box::new(get_dummy_registration()))
+    } else {
+        std::ptr::null()
+    }
+}
+
+// const TfLiteRegistration* MyFindCustomOp(void*, const char* custom_op,
+//                                          int version) {
+unsafe extern "C" fn my_find_custom_op(
+    _: *mut c_void,
+    custom_op: *const c_char,
+    version: i32,
+) -> *const ffi::TfLiteRegistration {
+    if unsafe { CStr::from_ptr(custom_op) }.to_str().unwrap() == "foo" && version == 1 {
+        Box::leak(Box::new(get_dummy_registration()))
+    } else {
+        std::ptr::null()
+    }
 }
 
 // Test using TfLiteInterpreterCreateWithSelectedOps.
-TEST(CApiExperimentalTest, SetOpResolver) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
-  ASSERT_NE(model, nullptr);
+// TEST(CApiExperimentalTest, SetOpResolver) {
+fn c_api_experimental_set_op_resolver_test() {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
+        assert!(!model.is_null());
 
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
+        let options: *mut ffi::TfLiteInterpreterOptions = ffi::TfLiteInterpreterOptionsCreate();
 
-  OpResolverData my_data;
-  TfLiteInterpreterOptionsSetOpResolver(options, MyFindBuiltinOp,
-                                        MyFindCustomOp, &my_data);
-  EXPECT_FALSE(my_data.called_for_add);
+        let mut my_data: OpResolverData = OpResolverData::default();
+        ffi::TfLiteInterpreterOptionsSetOpResolver(
+            options,
+            Some(my_find_builtin_op),
+            Some(my_find_custom_op),
+            &mut my_data as *mut _ as *mut c_void,
+        );
+        assert_eq!(my_data.called_for_add, false);
 
-  TfLiteInterpreter* interpreter =
-      TfLiteInterpreterCreateWithSelectedOps(model, options);
-  ASSERT_NE(interpreter, nullptr);
-  ASSERT_EQ(TfLiteInterpreterAllocateTensors(interpreter), kTfLiteOk);
-  EXPECT_EQ(TfLiteInterpreterResetVariableTensors(interpreter), kTfLiteOk);
-  EXPECT_EQ(TfLiteInterpreterInvoke(interpreter), kTfLiteOk);
-  EXPECT_TRUE(my_data.called_for_add);
+        let interpreter: *mut ffi::TfLiteInterpreter =
+            ffi::TfLiteInterpreterCreateWithSelectedOps(model, options);
+        assert!(!interpreter.is_null());
+        assert_eq!(
+            ffi::TfLiteInterpreterAllocateTensors(interpreter),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+        assert_eq!(
+            ffi::TfLiteInterpreterResetVariableTensors(interpreter),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+        assert_eq!(
+            ffi::TfLiteInterpreterInvoke(interpreter),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+        assert_eq!(my_data.called_for_add, true);
 
-  TfLiteInterpreterDelete(interpreter);
-  TfLiteInterpreterOptionsDelete(options);
-  TfLiteModelDelete(model);
+        ffi::TfLiteInterpreterDelete(interpreter);
+        ffi::TfLiteInterpreterOptionsDelete(options);
+        ffi::TfLiteModelDelete(model);
+    }
 }
 
-void AllocateAndSetInputs(TfLiteInterpreter* interpreter) {
-  std::array<int, 1> input_dims = {2};
-  ASSERT_EQ(TfLiteInterpreterResizeInputTensor(
-                interpreter, 0, input_dims.data(), input_dims.size()),
-            kTfLiteOk);
-  ASSERT_EQ(TfLiteInterpreterAllocateTensors(interpreter), kTfLiteOk);
-  TfLiteTensor* input_tensor = TfLiteInterpreterGetInputTensor(interpreter, 0);
-  ASSERT_NE(input_tensor, nullptr);
-  std::array<float, 2> input = {1.f, 3.f};
-  ASSERT_EQ(TfLiteTensorCopyFromBuffer(input_tensor, input.data(),
-                                       input.size() * sizeof(float)),
-            kTfLiteOk);
+// void AllocateAndSetInputs(TfLiteInterpreter* interpreter) {
+fn allocate_and_set_inputs(interpreter: *mut ffi::TfLiteInterpreter) {
+    // std::array<int, 1> input_dims = {2};
+    unsafe {
+        let input_dims = [2];
+        assert_eq!(
+            ffi::TfLiteInterpreterResizeInputTensor(
+                interpreter,
+                0,
+                input_dims.as_ptr(),
+                input_dims.len() as i32
+            ),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+        assert_eq!(
+            ffi::TfLiteInterpreterAllocateTensors(interpreter),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+        let input_tensor: *mut ffi::TfLiteTensor =
+            ffi::TfLiteInterpreterGetInputTensor(interpreter, 0);
+        assert!(!input_tensor.is_null());
+        // std::array<float, 2> input = {1.f, 3.f};
+        let input = [1f32, 3f32];
+        assert_eq!(
+            ffi::TfLiteTensorCopyFromBuffer(
+                input_tensor,
+                input.as_ptr() as *const _ as *const c_void,
+                input.len() * size_of::<f32>()
+            ),
+            ffi::TfLiteStatus_kTfLiteOk
+        );
+    }
 }
 
+/*
 void VerifyOutputs(TfLiteInterpreter* interpreter) {
   const TfLiteTensor* output_tensor =
       TfLiteInterpreterGetOutputTensor(interpreter, 0);
@@ -230,7 +316,7 @@ void VerifyOutputs(TfLiteInterpreter* interpreter) {
   std::array<float, 2> output;
   ASSERT_EQ(TfLiteTensorCopyToBuffer(output_tensor, output.data(),
                                      output.size() * sizeof(float)),
-            kTfLiteOk);
+            ffi::TfLiteStatus_kTfLiteOk);
   EXPECT_EQ(output[0], 3.f);
   EXPECT_EQ(output[1], 9.f);
 }
@@ -263,7 +349,7 @@ void CheckExecution(TfLiteInterpreterOptions* options,
 TEST_F(TestDelegate, NoDelegate) {
   TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
   // Execution without any delegate should succeed.
-  CheckExecution(options, kTfLiteOk, kTfLiteOk);
+  CheckExecution(options, ffi::TfLiteStatus_kTfLiteOk, ffi::TfLiteStatus_kTfLiteOk);
   TfLiteInterpreterOptionsDelete(options);
 }
 
@@ -299,7 +385,7 @@ TEST_F(TestDelegate, DelegateNodeInvokeFailureFallback) {
                  kTfLiteDelegateError,
                  // Subsequent executions will not use the delegate and
                  // should therefore succeed.
-                 kTfLiteOk);
+                 ffi::TfLiteStatus_kTfLiteOk);
   TfLiteInterpreterOptionsDelete(options);
 }
 
@@ -329,7 +415,7 @@ TEST_F(TestDelegate, TestFallbackWithMultipleDelegates) {
                  kTfLiteDelegateError,
                  // Subsequent executions will not use the delegate and
                  // should therefore succeed.
-                 kTfLiteOk);
+                 ffi::TfLiteStatus_kTfLiteOk);
   TfLiteInterpreterOptionsDelete(options);
 }
 */
