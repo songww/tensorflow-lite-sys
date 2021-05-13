@@ -308,66 +308,141 @@ fn allocate_and_set_inputs(interpreter: *mut ffi::TfLiteInterpreter) {
     }
 }
 
-/*
-void VerifyOutputs(TfLiteInterpreter* interpreter) {
-  const TfLiteTensor* output_tensor =
-      TfLiteInterpreterGetOutputTensor(interpreter, 0);
-  ASSERT_NE(output_tensor, nullptr);
-  std::array<float, 2> output;
-  ASSERT_EQ(TfLiteTensorCopyToBuffer(output_tensor, output.data(),
-                                     output.size() * sizeof(float)),
-            ffi::TfLiteStatus_kTfLiteOk);
-  EXPECT_EQ(output[0], 3.f);
-  EXPECT_EQ(output[1], 9.f);
-}
-
-void CheckExecution(TfLiteInterpreterOptions* options,
-                    TfLiteStatus expected_first_result,
-                    TfLiteStatus expected_subsequent_results) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
-  ASSERT_NE(model, nullptr);
-
-  TfLiteInterpreter* interpreter = TfLiteInterpreterCreate(model, options);
-  ASSERT_NE(interpreter, nullptr);
-
-  AllocateAndSetInputs(interpreter);
-  for (int i = 0; i < 4; i++) {
-    bool result = TfLiteInterpreterInvoke(interpreter);
-    bool expected_result =
-        ((i == 0) ? expected_first_result : expected_subsequent_results);
-    EXPECT_EQ(result, expected_result);
-    if (result != kTfLiteError) {
-      VerifyOutputs(interpreter);
+// void VerifyOutputs(TfLiteInterpreter* interpreter) {
+fn verify_outputs(interpreter: *mut ffi::TfLiteInterpreter) {
+    unsafe {
+        let output_tensor: *const ffi::TfLiteTensor =
+            ffi::TfLiteInterpreterGetOutputTensor(interpreter, 0);
+        assert!(!output_tensor.is_null());
+        // std::array<float, 2> output;
+        let mut output = [0f32, 0f32];
+        assert_eq!(
+            ffi::TfLiteTensorCopyToBuffer(
+                output_tensor,
+                output.as_mut_ptr() as *mut _ as *mut c_void,
+                output.len() * size_of::<f32>(),
+            ),
+            ffi::TfLiteStatus_kTfLiteOk,
+        );
+        assert_eq!(&output, &[3f32, 9f32]);
     }
-  }
-
-  TfLiteInterpreterDelete(interpreter);
-  TfLiteModelDelete(model);
 }
 
-TEST_F(TestDelegate, NoDelegate) {
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
-  // Execution without any delegate should succeed.
-  CheckExecution(options, ffi::TfLiteStatus_kTfLiteOk, ffi::TfLiteStatus_kTfLiteOk);
-  TfLiteInterpreterOptionsDelete(options);
+// void CheckExecution(TfLiteInterpreterOptions* options,
+//                     TfLiteStatus expected_first_result,
+//                     TfLiteStatus expected_subsequent_results) {
+fn check_execution(
+    options: *mut ffi::TfLiteInterpreterOptions,
+    expected_first_result: ffi::TfLiteStatus,
+    expected_subsequent_results: ffi::TfLiteStatus,
+) {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
+        assert!(!model.is_null());
+
+        let interpreter: *mut ffi::TfLiteInterpreter = ffi::TfLiteInterpreterCreate(model, options);
+        assert!(!interpreter.is_null());
+
+        allocate_and_set_inputs(interpreter);
+        for i in 0..4 {
+            let result = ffi::TfLiteInterpreterInvoke(interpreter);
+            let expected_result = if i == 0 {
+                expected_first_result
+            } else {
+                expected_subsequent_results
+            };
+            assert_eq!(result, expected_result);
+            if result != ffi::TfLiteStatus_kTfLiteError {
+                verify_outputs(interpreter);
+            }
+        }
+
+        ffi::TfLiteInterpreterDelete(interpreter);
+        ffi::TfLiteModelDelete(model);
+    }
 }
 
-TEST_F(TestDelegate, DelegateNodeInvokeFailure) {
+// TEST_F(TestDelegate, NoDelegate) {
+fn c_api_experimental_nodelegate_test() {
+    unsafe {
+        let options: *mut ffi::TfLiteInterpreterOptions = ffi::TfLiteInterpreterOptionsCreate();
+        // Execution without any delegate should succeed.
+        check_execution(
+            options,
+            ffi::TfLiteStatus_kTfLiteOk,
+            ffi::TfLiteStatus_kTfLiteOk,
+        );
+        ffi::TfLiteInterpreterOptionsDelete(options);
+    }
+}
+
+/*
+unsafe extern "C" fn simple_delegate_prepare(context: *mut ffi::TfLiteContext, delegate: *mut TfLiteDelegate) -> TfLiteStatus {
+    // auto* simple = static_cast<SimpleDelegate*>(delegate->data_);
+    let nodes_to_separate: *mut TfLiteIntArray =
+        ffi::TfLiteIntArrayCreate(delegate.nodes_.len());
+    // Mark nodes that we want in TfLiteIntArray* structure.
+    let mut index: i32 = 0;
+    for node_index in &delegate.nodes_ {
+      nodes_to_separate.data[idx] = node_index;
+      index += 1;
+      // make sure node is added
+      let node: TfLiteNode;
+      let reg: *mut TfLiteRegistration;
+      context.GetNodeAndRegistration(context, node_index, &node as , &reg);
+      if (simple->custom_op_) {
+        TFLITE_CHECK_EQ(reg->builtin_code, tflite::BuiltinOperator_CUSTOM);
+        TFLITE_CHECK_EQ(strcmp(reg->custom_name, "my_add"), 0);
+      } else {
+        TFLITE_CHECK_EQ(reg->builtin_code, tflite::BuiltinOperator_ADD);
+      }
+    }
+    // Check that all nodes are available
+    TfLiteIntArray* execution_plan;
+    TF_LITE_ENSURE_STATUS(context->GetExecutionPlan(context, &execution_plan));
+    for (int exec_index = 0; exec_index < execution_plan->size; exec_index++) {
+      int node_index = execution_plan->data[exec_index];
+      TfLiteNode* node;
+      TfLiteRegistration* reg;
+      context->GetNodeAndRegistration(context, node_index, &node, &reg);
+      if (exec_index == node_index) {
+        // Check op details only if it wasn't delegated already.
+        if (simple->custom_op_) {
+          TFLITE_CHECK_EQ(reg->builtin_code, tflite::BuiltinOperator_CUSTOM);
+          TFLITE_CHECK_EQ(strcmp(reg->custom_name, "my_add"), 0);
+        } else {
+          TFLITE_CHECK_EQ(reg->builtin_code, tflite::BuiltinOperator_ADD);
+        }
+      }
+    }
+
+
+// TEST_F(TestDelegate, DelegateNodeInvokeFailure) {
+fn c_api_experimental_delegate_node_invoke_failure_test() {
+    let mut data = [0i32, 1i32];
+    ffi::TfLiteDelegate {
+        data_: data.as_mut_ptr() as *mut _ as *mut c_void,
+        Prepare: None,
+    }
   // Initialize a delegate that will fail when invoked.
-  delegate_ = std::unique_ptr<SimpleDelegate>(new SimpleDelegate(
+    unsafe {
+  let delegate_ = std::unique_ptr<SimpleDelegate>(new SimpleDelegate(
       {0, 1}, kTfLiteDelegateFlagsNone, false /**fail_node_prepare**/,
       0 /**min_ops_per_subset**/, true /**fail_node_invoke**/,
       false /**automatic_shape_propagation**/, false /**custom_op**/));
   // Create another interpreter with the delegate, without fallback.
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
-  TfLiteInterpreterOptionsAddDelegate(options,
+  let options: *mut ffi::TfLiteInterpreterOptions = ffi::TfLiteInterpreterOptionsCreate();
+  ffi::TfLiteInterpreterOptionsAddDelegate(options,
                                       delegate_->get_tf_lite_delegate());
   // Execution with the delegate should fail.
-  CheckExecution(options, kTfLiteError, kTfLiteError);
-  TfLiteInterpreterOptionsDelete(options);
+  check_execution(options, ffi::TfLiteStatus_kTfLiteError, ffi::TfLiteStatus_kTfLiteError);
+  ffi::TfLiteInterpreterOptionsDelete(options);
+    }
 }
+*/
 
+/*
 TEST_F(TestDelegate, DelegateNodeInvokeFailureFallback) {
   // Initialize a delegate that will fail when invoked.
   delegate_ = std::unique_ptr<SimpleDelegate>(new SimpleDelegate(
