@@ -2,8 +2,11 @@ use std::ffi::{c_void, CStr, CString};
 use std::mem::size_of;
 use std::os::raw::c_char;
 
+use vsprintf::vsprintf;
+
 use tensorflow_lite_sys as ffi;
 
+#[test]
 fn c_api_version_test() {
     let version = unsafe {
         let version: *const c_char = ffi::TfLiteVersion();
@@ -13,6 +16,7 @@ fn c_api_version_test() {
 }
 
 // TEST(CApiSimple, Smoke) {
+#[test]
 fn c_api_smoke_test() {
     unsafe {
         let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
@@ -24,7 +28,7 @@ fn c_api_smoke_test() {
         ffi::TfLiteInterpreterOptionsSetNumThreads(options, 2);
 
         let interpreter: *mut ffi::TfLiteInterpreter = ffi::TfLiteInterpreterCreate(model, options);
-        assert!(interpreter.is_null());
+        assert!(!interpreter.is_null());
 
         // The options/model can be deleted immediately after interpreter creation.
         ffi::TfLiteInterpreterOptionsDelete(options);
@@ -55,7 +59,7 @@ fn c_api_smoke_test() {
 
         let input_tensor: *mut ffi::TfLiteTensor =
             ffi::TfLiteInterpreterGetInputTensor(interpreter, 0);
-        assert!(input_tensor.is_null());
+        assert!(!input_tensor.is_null());
         assert_eq!(
             ffi::TfLiteTensorType(input_tensor),
             ffi::TfLiteType_kTfLiteFloat32
@@ -93,7 +97,7 @@ fn c_api_smoke_test() {
 
         let output_tensor: *const ffi::TfLiteTensor =
             ffi::TfLiteInterpreterGetOutputTensor(interpreter, 0);
-        assert!(output_tensor.is_null());
+        assert!(!output_tensor.is_null());
         assert_eq!(
             ffi::TfLiteTensorType(output_tensor),
             ffi::TfLiteType_kTfLiteFloat32
@@ -130,6 +134,7 @@ fn c_api_smoke_test() {
 }
 
 // TEST(CApiSimple, QuantizationParams) {
+#[test]
 fn c_api_simple_quantization_params_test() {
     unsafe {
         let path = CString::new("tensorflow/tensorflow/lite/testdata/add_quantized.bin").unwrap();
@@ -160,19 +165,19 @@ fn c_api_simple_quantization_params_test() {
             ffi::TfLiteStatus_kTfLiteOk
         );
 
-        let mut input_tensor: *mut ffi::TfLiteTensor =
+        let input_tensor: *mut ffi::TfLiteTensor =
             ffi::TfLiteInterpreterGetInputTensor(interpreter, 0);
-        assert!(input_tensor.is_null());
-        assert_ne!(
+        assert!(!input_tensor.is_null());
+        assert_eq!(
             ffi::TfLiteTensorType(input_tensor),
             ffi::TfLiteType_kTfLiteUInt8
         );
-        assert_ne!(ffi::TfLiteTensorNumDims(input_tensor), 1);
-        assert_ne!(ffi::TfLiteTensorDim(input_tensor, 0), 2);
+        assert_eq!(ffi::TfLiteTensorNumDims(input_tensor), 1);
+        assert_eq!(ffi::TfLiteTensorDim(input_tensor, 0), 2);
 
         let input_params: ffi::TfLiteQuantizationParams =
             ffi::TfLiteTensorQuantizationParams(input_tensor);
-        assert_ne!(input_params.scale, 0.003922f32);
+        assert_eq!(input_params.scale, 0.003922f32);
         assert_eq!(input_params.zero_point, 0);
 
         // const std::array<uint8_t, 2> input = {1, 3};
@@ -221,101 +226,143 @@ fn c_api_simple_quantization_params_test() {
     }
 }
 
-/*
-TEST(CApiSimple, Delegate) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
+// TEST(CApiSimple, Delegate) {
+#[test]
+fn c_api_delegate_test() {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
 
-  // Create and install a delegate instance.
-  bool delegate_prepared = false;
-  TfLiteDelegate delegate = TfLiteDelegateCreate();
-  delegate.data_ = &delegate_prepared;
-  delegate.Prepare = [](TfLiteContext* context, TfLiteDelegate* delegate) {
-    *static_cast<bool*>(delegate->data_) = true;
-    return kTfLiteOk;
-  };
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
-  TfLiteInterpreterOptionsAddDelegate(options, &delegate);
-  TfLiteInterpreter* interpreter = TfLiteInterpreterCreate(model, options);
+        // Create and install a delegate instance.
+        let mut delegate_prepared = false;
+        let mut delegate = ffi::TfLiteDelegateCreate();
+        delegate.data_ = &mut delegate_prepared as *mut _ as *mut c_void;
+        extern "C" fn delegate_prepare(
+            _context: *mut ffi::TfLiteContext,
+            delegate: *mut ffi::TfLiteDelegate,
+        ) -> ffi::TfLiteStatus {
+            unsafe { *((*delegate).data_ as *mut bool) = true };
+            ffi::TfLiteStatus_kTfLiteOk
+        }
+        delegate.Prepare = Some(delegate_prepare);
+        let options = ffi::TfLiteInterpreterOptionsCreate();
+        ffi::TfLiteInterpreterOptionsAddDelegate(options, &mut delegate as *mut _);
+        let interpreter = ffi::TfLiteInterpreterCreate(model, options);
 
-  // The delegate should have been applied.
-  EXPECT_TRUE(delegate_prepared);
+        // The delegate should have been applied.
+        assert!(delegate_prepared);
 
-  // Subsequent execution should behave properly (the delegate is a no-op).
-  TfLiteInterpreterOptionsDelete(options);
-  TfLiteModelDelete(model);
-  EXPECT_EQ(TfLiteInterpreterInvoke(interpreter), kTfLiteOk);
-  TfLiteInterpreterDelete(interpreter);
+        // Subsequent execution should behave properly (the delegate is a no-op).
+        ffi::TfLiteInterpreterOptionsDelete(options);
+        ffi::TfLiteModelDelete(model);
+        assert_eq!(
+            ffi::TfLiteInterpreterInvoke(interpreter),
+            ffi::TfLiteStatus_kTfLiteOk,
+        );
+        ffi::TfLiteInterpreterDelete(interpreter);
+    }
 }
 
-TEST(CApiSimple, DelegateFails) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
+// TEST(CApiSimple, DelegateFails) {
+#[test]
+fn c_api_delegate_fails_test() {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
 
-  // Create and install a delegate instance.
-  TfLiteDelegate delegate = TfLiteDelegateCreate();
-  delegate.Prepare = [](TfLiteContext* context, TfLiteDelegate* delegate) {
-    return kTfLiteError;
-  };
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
-  TfLiteInterpreterOptionsAddDelegate(options, &delegate);
-  TfLiteInterpreter* interpreter = TfLiteInterpreterCreate(model, options);
+        // Create and install a delegate instance.
+        let mut delegate = ffi::TfLiteDelegateCreate();
+        extern "C" fn delegate_prepare(
+            _context: *mut ffi::TfLiteContext,
+            _delegate: *mut ffi::TfLiteDelegate,
+        ) -> ffi::TfLiteStatus {
+            ffi::TfLiteStatus_kTfLiteError
+        }
+        delegate.Prepare = Some(delegate_prepare);
+        let options = ffi::TfLiteInterpreterOptionsCreate();
+        ffi::TfLiteInterpreterOptionsAddDelegate(options, &mut delegate as *mut _);
+        let interpreter = ffi::TfLiteInterpreterCreate(model, options);
 
-  // Interpreter creation should fail as delegate preparation failed.
-  EXPECT_EQ(nullptr, interpreter);
+        // Interpreter creation should fail as delegate preparation failed.
+        assert!(interpreter.is_null());
 
-  TfLiteInterpreterOptionsDelete(options);
-  TfLiteModelDelete(model);
+        ffi::TfLiteInterpreterOptionsDelete(options);
+        ffi::TfLiteModelDelete(model);
+    }
 }
 
-TEST(CApiSimple, ErrorReporter) {
-  TfLiteModel* model =
-      TfLiteModelCreateFromFile("tensorflow/lite/testdata/add.bin");
-  TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
+// TEST(CApiSimple, ErrorReporter) {
+#[test]
+fn c_api_simple_error_reporter_test() {
+    unsafe {
+        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
+        let options = ffi::TfLiteInterpreterOptionsCreate();
 
-  // Install a custom error reporter into the interpreter by way of options.
-  tflite::TestErrorReporter reporter;
-  TfLiteInterpreterOptionsSetErrorReporter(
-      options,
-      [](void* user_data, const char* format, va_list args) {
-        reinterpret_cast<tflite::TestErrorReporter*>(user_data)->Report(format,
-                                                                        args);
-      },
-      &reporter);
-  TfLiteInterpreter* interpreter = TfLiteInterpreterCreate(model, options);
+        // Install a custom error reporter into the interpreter by way of options.
+        #[repr(C)]
+        struct TestErrorReporter {
+            error_messages: Vec<String>,
+        }
+        impl TestErrorReporter {
+            fn report(&mut self, message: String) {
+                self.error_messages.push(message);
+            }
+            fn num_calls(&self) -> usize {
+                self.error_messages.len()
+            }
+        }
+        extern "C" fn report(
+            user_data: *mut c_void,
+            format: *const c_char,
+            args: *mut ffi::va_list,
+        ) {
+            unsafe { (user_data as *mut TestErrorReporter).as_mut() }
+                .unwrap()
+                .report(unsafe { vsprintf(format, args).unwrap() });
+        }
+        let mut reporter = TestErrorReporter {
+            error_messages: Vec::new(),
+        };
+        ffi::TfLiteInterpreterOptionsSetErrorReporter(
+            options,
+            Some(report),
+            &mut reporter as *mut _ as *mut c_void,
+        );
+        let interpreter = ffi::TfLiteInterpreterCreate(model, options);
 
-  // The options/model can be deleted immediately after interpreter creation.
-  TfLiteInterpreterOptionsDelete(options);
-  TfLiteModelDelete(model);
+        // The options/model can be deleted immediately after interpreter creation.
+        ffi::TfLiteInterpreterOptionsDelete(options);
+        ffi::TfLiteModelDelete(model);
 
-  // Invoke the interpreter before tensor allocation.
-  EXPECT_EQ(TfLiteInterpreterInvoke(interpreter), kTfLiteError);
+        // Invoke the interpreter before tensor allocation.
+        assert_eq!(
+            ffi::TfLiteInterpreterInvoke(interpreter),
+            ffi::TfLiteStatus_kTfLiteError
+        );
 
-  // The error should propagate to the custom error reporter.
-  EXPECT_EQ(reporter.error_messages(),
-            "Invoke called on model that is not ready.");
-  EXPECT_EQ(reporter.num_calls(), 1);
+        println!("{:?}", &reporter.error_messages);
+        // The error should propagate to the custom error reporter.
+        assert!(reporter.error_messages[0].starts_with("Invoke called on model that is not ready."));
+        assert_eq!(reporter.num_calls(), 1);
 
-  TfLiteInterpreterDelete(interpreter);
+        ffi::TfLiteInterpreterDelete(interpreter);
+    }
 }
 
-TEST(CApiSimple, ValidModel) {
-  std::ifstream model_file("tensorflow/lite/testdata/add.bin");
-
-  model_file.seekg(0, std::ios_base::end);
-  std::vector<char> model_buffer(model_file.tellg());
-
-  model_file.seekg(0, std::ios_base::beg);
-  model_file.read(model_buffer.data(), model_buffer.size());
-
-  TfLiteModel* model =
-      TfLiteModelCreate(model_buffer.data(), model_buffer.size());
-  ASSERT_NE(model, nullptr);
-  TfLiteModelDelete(model);
+// TEST(CApiSimple, ValidModel) {
+#[test]
+fn c_api_simple_valid_model_test() {
+    let bytes = include_bytes!("../tensorflow/tensorflow/lite/testdata/add.bin");
+    unsafe {
+        let model = ffi::TfLiteModelCreate(bytes.as_ptr() as *const c_void, bytes.len());
+        assert!(!model.is_null());
+        ffi::TfLiteModelDelete(model);
+    }
 }
-*/
 
 // TEST(CApiSimple, ValidModelFromFile) {
+#[test]
 fn c_api_simple_valid_model_from_file_test() {
     unsafe {
         let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
@@ -326,6 +373,7 @@ fn c_api_simple_valid_model_from_file_test() {
 }
 
 // TEST(CApiSimple, InvalidModel) {
+#[test]
 fn c_api_simple_invalid_model_test() {
     // std::vector<char> invalid_model(20, 'c');
     unsafe {
@@ -339,6 +387,7 @@ fn c_api_simple_invalid_model_test() {
 }
 
 // TEST(CApiSimple, InvalidModelFromFile) {
+#[test]
 fn c_api_simple_invalid_model_from_file_test() {
     unsafe {
         let path = CString::new("invalid/path/foo.tflite").unwrap();

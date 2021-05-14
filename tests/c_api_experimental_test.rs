@@ -234,6 +234,7 @@ unsafe extern "C" fn my_find_custom_op(
 
 // Test using TfLiteInterpreterCreateWithSelectedOps.
 // TEST(CApiExperimentalTest, SetOpResolver) {
+#[test]
 fn c_api_experimental_set_op_resolver_test() {
     unsafe {
         let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
@@ -364,6 +365,7 @@ fn check_execution(
 }
 
 // TEST_F(TestDelegate, NoDelegate) {
+#[test]
 fn c_api_experimental_nodelegate_test() {
     unsafe {
         let options: *mut ffi::TfLiteInterpreterOptions = ffi::TfLiteInterpreterOptionsCreate();
