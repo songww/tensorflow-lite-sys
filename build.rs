@@ -1,10 +1,14 @@
 use std::env;
+// use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use zip;
 
 use bindgen;
 
 fn main() {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let tfversion = if cfg!(feature = "v2.4") {
         "v2.4"
@@ -66,7 +70,7 @@ fn main() {
     }
 
     if cfg!(feature = "hexagon") {
-        if !cfg!(target_os = "android") {
+        if target_os != "android" {
             panic!("'hexagon' delegate only works on 'android' platform!");
         }
         builder = builder.header(format!(
@@ -105,7 +109,8 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .unwrap();
 
-    if cfg!(target_os = "ios") {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    if target_os == "ios" {
         let coreml_required = cfg!(feature = "coreml");
         let metal_required = cfg!(feature = "metal");
 
@@ -141,7 +146,54 @@ fn main() {
         }
         println!("cargo:rustc-link-lib=static=tensorflow-lite");
         println!("cargo:rustc-link-search=native={}", out_path.display());
-    } else if cfg!(target_os = "macos") {
+    } else if target_os == "android" {
+        let lib_search_parh = if let Ok(lib_search_parh) = env::var("TENSORFLOWLITE_C_PATH") {
+            PathBuf::from(lib_search_parh)
+        } else {
+            let version = if cfg!(feature = "v2.4") {
+                "2.4.0"
+            } else if cfg!(feature = "v2.5") {
+                "2.5.0"
+            } else {
+                unreachable!()
+            };
+            let out_dir = out_path.join("tensorflow-lite");
+            if !out_dir.exists() {
+                std::fs::create_dir(&out_dir)
+                    .expect(&format!("Can not create dir `{}`", out_dir.display()));
+            }
+            download_and_extract_aar(version, &out_dir, None);
+            if cfg!(feature = "gpu") {
+                download_and_extract_aar(version, &out_dir, Some("gpu"));
+                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+            }
+            if cfg!(feature = "hexagon") {
+                download_and_extract_aar(version, &out_dir, Some("hexagon"));
+                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+            }
+            if cfg!(feature = "select-tf-ops") {
+                download_and_extract_aar(version, &out_dir, Some("select-tf-ops"));
+                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+            }
+            out_dir
+        };
+        let arch = if target_arch == "x86" {
+            "x86"
+        } else if target_arch == "x86_64" {
+            "x86_64"
+        } else if target_arch == "arm" {
+            "armeabi-v7a"
+        } else if target_arch == "aarch64" {
+            "arm64-v8a"
+        } else {
+            panic!("Unsupported target_arch {}", target_arch);
+        };
+        println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+        println!(
+            "cargo:rustc-link-search={}",
+            lib_search_parh.join(arch).display()
+        );
+    } else if target_os == "macos" {
         let lib_search_parh = env::var("TENSORFLOWLITE_C_PATH").expect("Please set env `ENSORFLOWLITE_C_PATH` that contains `libtensorflowlite_c.dylib` for macOS.");
         if !PathBuf::from(&lib_search_parh)
             .join("libtensorflowlite_c.dylib")
@@ -154,7 +206,7 @@ fn main() {
         }
         println!("cargo:rustc-link-lib=dylib=tensorflowlite_c");
         println!("cargo:rustc-link-search={}", lib_search_parh);
-    } else if cfg!(target_os = "linux") {
+    } else if target_os == "linux" {
         let lib_search_parh = env::var("TENSORFLOWLITE_C_PATH").expect("Please set env `ENSORFLOWLITE_C_PATH` that contains `libtensorflowlite_c.so` for linux.");
         if !PathBuf::from(&lib_search_parh)
             .join("libtensorflowlite_c.so")
@@ -168,6 +220,55 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=tensorflowlite_c");
         println!("cargo:rustc-link-search={}", lib_search_parh);
     }
+}
+
+fn download_and_extract_aar(version: &str, out_dir: &PathBuf, feature: Option<&str>) {
+    let name = if feature.is_some() {
+        format!("tensorflow-lite-{}", feature.unwrap())
+    } else {
+        "tensorflow-lite".to_string()
+    };
+    let url = format!(
+        "https://repo1.maven.org/maven2/org/tensorflow/{name}/{version}/{name}-{version}.aar",
+        name = name,
+        version = version
+    );
+    let aar = out_dir.join(format!("{}-{}.zip", name, version));
+    let output = Command::new("curl")
+        .arg(&url)
+        .arg("-v")
+        .arg("-o")
+        .arg(&aar)
+        .output()
+        .expect(&format!(
+            "Failed to download {}-{}.aar from `{}`",
+            name, version, url
+        ));
+    if !output.status.success() {
+        println!(
+            "cargo:warning=stdout {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        println!(
+            "cargo:warning=stderr {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        panic!(
+            "Failed to download `{}-{}.aar` from `{}`",
+            name, version, url
+        );
+    }
+    println!("cargo:warning=downloaded {}", aar.display());
+    let mut zipfile = zip::read::ZipArchive::new(
+        std::fs::File::open(&aar).expect(&format!("Can not open `{}`", aar.display())),
+    )
+    .expect(&format!(
+        "Invalid `{}-{}.aar` which was downloaded from `{}`",
+        name, version, url
+    ));
+    zipfile
+        .extract(out_dir.join("tensorflow-lite"))
+        .expect(&format!("Can not extract `{}-{}.aar`", name, version));
 }
 
 fn find_pods_root() -> Option<PathBuf> {

@@ -11,6 +11,7 @@ license = "Apache-2.0"
 
 [build-dependencies]
 bindgen = "0.58"
+zip = { version = "0.5.12", default-features = false, features = [ "deflate" ] }
 
 [features]
 default = [ "v2.4", "xnnpack" ]
@@ -22,6 +23,7 @@ coreml = []
 hexagon = []
 xnnpack = []
 experimental = []
+"select-tf-ops" = []
 
 [dev-dependencies]
 vsprintf = "2.0.0"
