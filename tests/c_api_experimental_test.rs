@@ -51,7 +51,7 @@ fn get_dummy_registration() -> ffi::TfLiteRegistration {
 #[test]
 fn c_api_experimental_smoke_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -93,7 +93,7 @@ fn c_api_experimental_smoke_test() {
 #[test]
 fn c_api_experimental_selected_builtins_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -134,7 +134,7 @@ fn c_api_experimental_selected_builtins_test() {
 #[test]
 fn c_api_experimental_missing_builtin_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -237,7 +237,7 @@ unsafe extern "C" fn my_find_custom_op(
 #[test]
 fn c_api_experimental_set_op_resolver_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -338,7 +338,7 @@ fn check_execution(
     expected_subsequent_results: ffi::TfLiteStatus,
 ) {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 

@@ -19,7 +19,7 @@ fn c_api_version_test() {
 #[test]
 fn c_api_smoke_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -137,7 +137,7 @@ fn c_api_smoke_test() {
 #[test]
 fn c_api_simple_quantization_params_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add_quantized.bin").unwrap();
+        let path = CString::new("testdata/add_quantized.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
@@ -230,7 +230,7 @@ fn c_api_simple_quantization_params_test() {
 #[test]
 fn c_api_delegate_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
 
         // Create and install a delegate instance.
@@ -267,7 +267,7 @@ fn c_api_delegate_test() {
 #[test]
 fn c_api_delegate_fails_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
 
         // Create and install a delegate instance.
@@ -295,7 +295,7 @@ fn c_api_delegate_fails_test() {
 #[test]
 fn c_api_simple_error_reporter_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         let options = ffi::TfLiteInterpreterOptionsCreate();
 
@@ -353,7 +353,7 @@ fn c_api_simple_error_reporter_test() {
 // TEST(CApiSimple, ValidModel) {
 #[test]
 fn c_api_simple_valid_model_test() {
-    let bytes = include_bytes!("../tensorflow/tensorflow/lite/testdata/add.bin");
+    let bytes = include_bytes!("../testdata/add.bin");
     unsafe {
         let model = ffi::TfLiteModelCreate(bytes.as_ptr() as *const c_void, bytes.len());
         assert!(!model.is_null());
@@ -365,7 +365,7 @@ fn c_api_simple_valid_model_test() {
 #[test]
 fn c_api_simple_valid_model_from_file_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
         ffi::TfLiteModelDelete(model);

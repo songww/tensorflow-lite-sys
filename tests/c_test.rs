@@ -24,7 +24,7 @@ fn test_version() {
 #[test]
 fn test_smoke_test() {
     unsafe {
-        let path = CString::new("tensorflow/tensorflow/lite/testdata/add.bin").unwrap();
+        let path = CString::new("testdata/add.bin").unwrap();
         let model: *mut ffi::TfLiteModel = ffi::TfLiteModelCreateFromFile(path.as_ptr());
         assert!(!model.is_null());
 
