@@ -142,13 +142,26 @@ fn main() {
         println!("cargo:rustc-link-lib=static=tensorflow-lite");
         println!("cargo:rustc-link-search=native={}", out_path.display());
     } else if cfg!(target_os = "macos") {
-        let lib_search_parh = env::var("LIB_TENSORFLOW_LITE_C_PATH").expect("Please set env `LIB_TENSORFLOW_LITE_C_PATH` that contains `libtensorflowlite_c.dylib` for macOS.");
+        let lib_search_parh = env::var("TENSORFLOWLITE_C_PATH").expect("Please set env `ENSORFLOWLITE_C_PATH` that contains `libtensorflowlite_c.dylib` for macOS.");
         if !PathBuf::from(&lib_search_parh)
             .join("libtensorflowlite_c.dylib")
             .exists()
         {
             panic!(
-                "`libtensorflowlite_c.dylib` dose not found in `{0}`, of env `LIB_TENSORFLOW_LITE_C_PATH`.",
+                "`libtensorflowlite_c.dylib` dose not found in `{0}`, of env `TENSORFLOWLITE_C_PATH`.",
+                lib_search_parh
+            );
+        }
+        println!("cargo:rustc-link-lib=dylib=tensorflowlite_c");
+        println!("cargo:rustc-link-search={}", lib_search_parh);
+    } else if cfg!(target_os = "linux") {
+        let lib_search_parh = env::var("TENSORFLOWLITE_C_PATH").expect("Please set env `ENSORFLOWLITE_C_PATH` that contains `libtensorflowlite_c.so` for linux.");
+        if !PathBuf::from(&lib_search_parh)
+            .join("libtensorflowlite_c.so")
+            .exists()
+        {
+            panic!(
+                "`libtensorflowlite_c.so` dose not found in `{0}`, of env `TENSORFLOWLITE_C_PATH`.",
                 lib_search_parh
             );
         }
