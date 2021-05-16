@@ -31,3 +31,8 @@ This crate provides bindings to the raw low-level C API.
 
 * env `TENSORFLOWLITE_C_PATH` required for build time.
 * env `DYLD_FALLBACK_LIBRARY_PATH` required for runtime.
+
+## Linux
+
+* env `TENSORFLOWLITE_C_PATH` required for build time.
+* env `LD_LIBRARY_PATH` required for runtime.
