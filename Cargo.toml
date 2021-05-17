@@ -12,9 +12,10 @@ license = "Apache-2.0"
 [build-dependencies]
 bindgen = "0.58"
 zip = { version = "0.5.12", default-features = false, features = [ "deflate" ] }
+# minreq = { version = "2.3.1", features = [ "https" ] }
 
 [features]
-default = [ "v2.4", "xnnpack" ]
+default = [ "v2.5", "xnnpack" ]
 "v2.4" = []
 "v2.5" = []
 gpu = []

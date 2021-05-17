@@ -69,7 +69,7 @@ fn main() {
         ));
     }
 
-    if cfg!(feature = "hexagon") {
+    if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
         if target_os != "android" {
             panic!("'hexagon' delegate only works on 'android' platform!");
         }
@@ -77,10 +77,9 @@ fn main() {
             "{}/tensorflow/lite/delegates/hexagon/hexagon_delegate.h",
             tfversion
         ));
-        // TODO: add link of hexagon library.
     }
 
-    let bindings = builder
+    builder = builder
         .allowlist_var("TfLite.*")
         .allowlist_type("TfLite.*")
         .allowlist_function("TfLite.*")
@@ -101,13 +100,7 @@ fn main() {
         // .prepend_enum_name(false)
         .respect_cxx_access_specs(true)
         .rustfmt_bindings(true)
-        .size_t_is_usize(true)
-        .generate()
-        .unwrap();
-
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .unwrap();
+        .size_t_is_usize(true);
 
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     if target_os == "ios" {
@@ -165,25 +158,34 @@ fn main() {
             download_and_extract_aar(version, &out_dir, None);
             if cfg!(feature = "gpu") {
                 download_and_extract_aar(version, &out_dir, Some("gpu"));
-                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+                println!("cargo:rustc-link-lib=dylib=tensorflowlite_gpu_jni");
             }
-            if cfg!(feature = "hexagon") {
+            if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
                 download_and_extract_aar(version, &out_dir, Some("hexagon"));
                 // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
             }
             if cfg!(feature = "select-tf-ops") {
                 download_and_extract_aar(version, &out_dir, Some("select-tf-ops"));
-                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
+                println!("cargo:rustc-link-lib=dylib=tensorflowlite_flex_jni");
             }
+            let ndk_home = env::var("ANDROID_NDK_ROOT")
+                .or_else(|_| env::var("ANDROID_NDK_HOME"))
+                .or_else(|_| env::var("ANDROID_NDK"))
+                .expect("env `ANDROID_NDK_ROOT` is required.");
+            builder = builder.clang_arg(format!("--sysroot={}/sysroot/", ndk_home));
             out_dir
         };
         let arch = if target_arch == "x86" {
+            builder = builder.clang_arg("--target=i686-linux-android21-clang");
             "x86"
         } else if target_arch == "x86_64" {
+            builder = builder.clang_arg("--target=x86_64-linux-android21-clang");
             "x86_64"
         } else if target_arch == "arm" {
+            builder = builder.clang_arg("--target=armv7a-linux-androideabi21-clang");
             "armeabi-v7a"
         } else if target_arch == "aarch64" {
+            builder = builder.clang_arg("--target=aarch64-linux-android21-clang");
             "arm64-v8a"
         } else {
             panic!("Unsupported target_arch {}", target_arch);
@@ -220,6 +222,11 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=tensorflowlite_c");
         println!("cargo:rustc-link-search={}", lib_search_parh);
     }
+    let bindings = builder.generate().unwrap();
+
+    bindings
+        .write_to_file(out_path.join("bindings.rs"))
+        .unwrap();
 }
 
 fn download_and_extract_aar(version: &str, out_dir: &PathBuf, feature: Option<&str>) {
@@ -236,6 +243,8 @@ fn download_and_extract_aar(version: &str, out_dir: &PathBuf, feature: Option<&s
     let aar = out_dir.join(format!("{}-{}.zip", name, version));
     let output = Command::new("curl")
         .arg(&url)
+        .arg("--continue-at")
+        .arg("-")
         .arg("-v")
         .arg("-o")
         .arg(&aar)
@@ -258,7 +267,7 @@ fn download_and_extract_aar(version: &str, out_dir: &PathBuf, feature: Option<&s
             name, version, url
         );
     }
-    println!("cargo:warning=downloaded {}", aar.display());
+    // println!("cargo:warning=downloaded {}", aar.display());
     let mut zipfile = zip::read::ZipArchive::new(
         std::fs::File::open(&aar).expect(&format!("Can not open `{}`", aar.display())),
     )
