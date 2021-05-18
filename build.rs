@@ -1,5 +1,6 @@
 use std::env;
 // use std::io::prelude::*;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -10,10 +11,10 @@ use bindgen;
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let tfversion = if cfg!(feature = "v2.4") {
-        "v2.4"
+    let (tfversion, version) = if cfg!(feature = "v2.4") {
+        ("v2.4", "2.4.0")
     } else if cfg!(feature = "v2.5") {
-        "v2.5"
+        ("v2.5", "2.5.0")
     } else {
         panic!("Unsupported tensorflow version.");
     };
@@ -71,13 +72,19 @@ fn main() {
 
     if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
         if target_os != "android" {
-            panic!("'hexagon' delegate only works on 'android' platform!");
+            panic!("`hexagon` delegate only works on `android` platform!");
         }
         builder = builder.header(format!(
             "{}/tensorflow/lite/delegates/hexagon/hexagon_delegate.h",
             tfversion
         ));
     }
+
+    let download_prebuilt_binary = if cfg!(feature = "download-prebuild-binary") {
+        true
+    } else {
+        false
+    };
 
     builder = builder
         .allowlist_var("TfLite.*")
@@ -106,8 +113,21 @@ fn main() {
     if target_os == "ios" {
         let coreml_required = cfg!(feature = "coreml");
         let metal_required = cfg!(feature = "metal");
+        let select_tf_ops_required = cfg!(feature = "select-tf-ops");
 
-        if let Ok(frameworks) = env::var("TFLITE_FRAMEWORK_PATH") {
+        if download_prebuilt_binary {
+            // todo!("Download frameworks by pod.");
+            let mut features = Vec::new();
+            if coreml_required {
+                features.push("CoreML");
+            }
+            if metal_required {
+                features.push("Metal");
+            }
+            download_framworks(&out_path, version, &features, select_tf_ops_required);
+        }
+
+        if let Ok(frameworks) = env::var("TENSORFLOWLITE_C_PATH") {
             let frameworks: &Path = frameworks.as_ref();
             if !frameworks.join("TensorFlowLiteC.framework").exists() {
                 panic!(
@@ -125,7 +145,7 @@ fn main() {
             if let Some(pods_root) = find_pods_root() {
                 let frameworks = pods_root.join("TensorFlowLiteC").join("Frameworks");
                 if !frameworks.join("TensorFlowLiteC.framework").exists() {
-                    panic!("TensorFlowLiteC.framework dose not found, Please set env `TFLITE_FRAMEWORK_PATH` that contains the frameworks.")
+                    panic!("TensorFlowLiteC.framework dose not found, Please set env `TENSORFLOWLITE_C_PATH` that contains the frameworks.")
                 }
                 ios_framework_to_staticlib(
                     &frameworks,
@@ -134,7 +154,7 @@ fn main() {
                     &out_path.join("libtensorflow-lite.a"),
                 );
             } else {
-                panic!("TensorFlowLiteC.framework dose not found, Please set env `TFLITE_FRAMEWORK_PATH` that contains the frameworks.")
+                panic!("TensorFlowLiteC.framework dose not found, Please set env `TENSORFLOWLITE_C_PATH` that contains the frameworks.")
             }
         }
         println!("cargo:rustc-link-lib=static=tensorflow-lite");
@@ -143,37 +163,40 @@ fn main() {
         let lib_search_parh = if let Ok(lib_search_parh) = env::var("TENSORFLOWLITE_C_PATH") {
             PathBuf::from(lib_search_parh)
         } else {
-            let version = if cfg!(feature = "v2.4") {
-                "2.4.0"
-            } else if cfg!(feature = "v2.5") {
-                "2.5.0"
-            } else {
-                unreachable!()
-            };
             let out_dir = out_path.join("tensorflow-lite");
             if !out_dir.exists() {
                 std::fs::create_dir(&out_dir)
                     .expect(&format!("Can not create dir `{}`", out_dir.display()));
-            }
-            download_and_extract_aar(version, &out_dir, None);
-            if cfg!(feature = "gpu") {
-                download_and_extract_aar(version, &out_dir, Some("gpu"));
-                println!("cargo:rustc-link-lib=dylib=tensorflowlite_gpu_jni");
-            }
-            if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
-                download_and_extract_aar(version, &out_dir, Some("hexagon"));
-                // println!("cargo:rustc-link-lib=dylib=tensorflowlite_jni");
-            }
-            if cfg!(feature = "select-tf-ops") {
-                download_and_extract_aar(version, &out_dir, Some("select-tf-ops"));
-                println!("cargo:rustc-link-lib=dylib=tensorflowlite_flex_jni");
             }
             let ndk_home = env::var("ANDROID_NDK_ROOT")
                 .or_else(|_| env::var("ANDROID_NDK_HOME"))
                 .or_else(|_| env::var("ANDROID_NDK"))
                 .expect("env `ANDROID_NDK_ROOT` is required.");
             builder = builder.clang_arg(format!("--sysroot={}/sysroot/", ndk_home));
-            out_dir
+            if cfg!(feature = "gpu") {
+                println!("cargo:rustc-link-lib=dylib=tensorflowlite_gpu_jni");
+            }
+            if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
+                println!("cargo:rustc-link-lib=dylib=tensorflowlite_hexagon_jni");
+            }
+            if cfg!(feature = "select-tf-ops") {
+                println!("cargo:rustc-link-lib=dylib=tensorflowlite_flex_jni");
+            }
+            if download_prebuilt_binary {
+                download_and_extract_aar(version, &out_dir, None);
+                if cfg!(feature = "gpu") {
+                    download_and_extract_aar(version, &out_dir, Some("gpu"));
+                }
+                if cfg!(feature = "hexagon") && cfg!(feature = "v2.5") {
+                    download_and_extract_aar(version, &out_dir, Some("hexagon"));
+                }
+                if cfg!(feature = "select-tf-ops") {
+                    download_and_extract_aar(version, &out_dir, Some("select-tf-ops"));
+                }
+                out_dir.join("jni")
+            } else {
+                out_dir
+            }
         };
         let arch = if target_arch == "x86" {
             builder = builder.clang_arg("--target=i686-linux-android21-clang");
@@ -276,8 +299,57 @@ fn download_and_extract_aar(version: &str, out_dir: &PathBuf, feature: Option<&s
         name, version, url
     ));
     zipfile
-        .extract(out_dir.join("tensorflow-lite"))
+        .extract(&out_dir)
         .expect(&format!("Can not extract `{}-{}.aar`", name, version));
+}
+
+fn download_framworks(dir: &Path, version: &str, features: &[&str], select_tf_ops: bool) {
+    let podfile = dir.join("Podfile");
+    let _ = std::fs::remove_file(&podfile);
+    let mut podfile = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(podfile)
+        .unwrap();
+    podfile.write(b"target 'tensorflow-lite' do\n").unwrap();
+    podfile.write(b"  use_frameworks!\n").unwrap();
+    if features.is_empty() {
+        podfile
+            .write(format!("  pod 'TensorFlowLiteC', '~> {}'\n", version).as_bytes())
+            .unwrap();
+    } else {
+        let subspecs = features
+            .iter()
+            .map(|feat| format!("'{}'", feat))
+            .collect::<Vec<_>>()
+            .join(", ");
+        podfile
+            .write(
+                format!(
+                    "  pod 'TensorFlowLiteC', '~> {}', :subspecs => [{}]\n",
+                    version, subspecs
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+    }
+    if select_tf_ops {
+        podfile
+            .write(format!("  pod 'TensorFlowLiteSelectTfOps', '~> 0.0.1-nightly'\n").as_bytes())
+            .unwrap();
+    }
+    podfile.write(b"end").unwrap();
+    let output = Command::new("pod")
+        .arg("install")
+        .arg(&format!("--project-directory={}", dir.display()))
+        .output()
+        .expect(&format!(
+            "can not download tensorflowlite frameworks by `pod install`"
+        ));
+    if !output.status.success() {
+        panic!("can not download tensorflowlite frameworks by `pod install`");
+    }
+    env::set_var("PODS_ROOT", dir.join("Pods"));
 }
 
 fn find_pods_root() -> Option<PathBuf> {
